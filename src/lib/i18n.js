@@ -1,0 +1,89 @@
+import { writable, derived } from 'svelte/store';
+
+/** @type {import('svelte/store').Writable<'en' | 'id'>} */
+export const locale = writable('en');
+
+const translations = {
+    en: {
+        // Header
+        home: 'Home',
+        about: 'About',
+
+        // Hero
+        heroTitle1: 'Find & Download',
+        heroTitle2: 'Your Favorite Music',
+        heroSubtitle: 'High quality MP3 downloads with just one click.',
+        searchPlaceholder: 'Search song, artist, or album...',
+        searchBtn: 'Search',
+        processing: 'Processing...',
+
+        // URL Section
+        urlTitle: 'Download from Link',
+        urlDesc: 'Paste a YouTube, TikTok, or SoundCloud link to download audio',
+        urlPlaceholder: 'https://youtube.com/watch?v=... or https://tiktok.com/...',
+        getAudio: 'Get Audio',
+        downloadMp3: 'Download MP3',
+
+        // Common
+        download: 'Download',
+
+        // About Page
+        aboutTitle: 'About MusicDownloader',
+        aboutDesc1: 'MusicDownloader is a fast, free, and easy-to-use tool for downloading your favorite music from YouTube, TikTok, and SoundCloud.',
+        aboutDesc2: 'We believe in open access to music. Our platform allows you to search for songs or paste links directly to get high-quality audio files instantly.',
+        features: 'Features',
+        feature1: '🚀 Fast downloads',
+        feature2: '🔍 Smart search engine',
+        feature3: '📱 Mobile friendly',
+        feature4: '🚫 No registration required',
+        disclaimer: 'Disclaimer',
+        disclaimerText: 'This tool is for educational purposes only. Please respect the artists and copyright holders. Do not download copyrighted material without permission.',
+    },
+    id: {
+        // Header
+        home: 'Beranda',
+        about: 'Tentang',
+
+        // Hero
+        heroTitle1: 'Cari & Unduh',
+        heroTitle2: 'Musik Favoritmu',
+        heroSubtitle: 'Unduh MP3 berkualitas tinggi hanya dengan satu klik.',
+        searchPlaceholder: 'Cari lagu, artis, atau album...',
+        searchBtn: 'Cari',
+        processing: 'Memproses...',
+
+        // URL Section
+        urlTitle: 'Unduh dari Link',
+        urlDesc: 'Tempel link YouTube, TikTok, atau SoundCloud untuk mengunduh audio',
+        urlPlaceholder: 'https://youtube.com/watch?v=... atau https://tiktok.com/...',
+        getAudio: 'Ambil Audio',
+        downloadMp3: 'Unduh MP3',
+
+        // Common
+        download: 'Unduh',
+
+        // About Page
+        aboutTitle: 'Tentang MusicDownloader',
+        aboutDesc1: 'MusicDownloader adalah alat yang cepat, gratis, dan mudah digunakan untuk mengunduh musik favoritmu dari YouTube, TikTok, dan SoundCloud.',
+        aboutDesc2: 'Kami percaya pada akses terbuka terhadap musik. Platform kami memungkinkanmu mencari lagu atau menempelkan tautan langsung untuk mendapatkan file audio berkualitas tinggi secara instan.',
+        features: 'Fitur',
+        feature1: '🚀 Unduhan cepat',
+        feature2: '🔍 Mesin pencari pintar',
+        feature3: '📱 Ramah perangkat seluler',
+        feature4: '🚫 Tidak perlu registrasi',
+        disclaimer: 'Penyangkalan',
+        disclaimerText: 'Alat ini hanya untuk tujuan edukasi. Harap hormati artis dan pemegang hak cipta. Jangan mengunduh materi berhak cipta tanpa izin.',
+    }
+};
+
+/**
+ * Derived store that returns the current translations object based on locale
+ */
+export const t = derived(locale, ($locale) => translations[$locale]);
+
+/**
+ * Toggle between languages
+ */
+export function toggleLocale() {
+    locale.update(l => l === 'en' ? 'id' : 'en');
+}
