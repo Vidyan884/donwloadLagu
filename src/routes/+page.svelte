@@ -99,6 +99,8 @@
     // Download Handler
     let downloadingIds = new Set();
 
+    /** @param {string} id
+     * @param {string} filename */
     async function handleDownload(id, filename) {
         if (downloadingIds.has(id)) return;
         downloadingIds.add(id);
@@ -130,7 +132,8 @@
             }, 100);
         } catch (e) {
             console.error(e);
-            errorMsg = `Gagal mendownload: ${e.message}. Coba lagu lain.`;
+            const msg = e instanceof Error ? e.message : String(e);
+            errorMsg = `Gagal mendownload: ${msg}. Coba lagu lain.`;
         } finally {
             downloadingIds.delete(id);
             downloadingIds = downloadingIds; // trigger reactivity
@@ -218,10 +221,11 @@
                     <button
                         class="btn"
                         on:click={() =>
+                            urlResult &&
                             handleDownload(urlResult.id, urlResult.title)}
-                        disabled={downloadingIds.has(urlResult.id)}
+                        disabled={urlResult && downloadingIds.has(urlResult.id)}
                     >
-                        {#if downloadingIds.has(urlResult.id)}
+                        {#if urlResult && downloadingIds.has(urlResult.id)}
                             {$t.processing}
                         {:else}
                             <Download size={18} /> {$t.downloadMp3}
@@ -244,7 +248,10 @@
                             <button
                                 class="btn-icon btn-play"
                                 on:click={() =>
-                                    handleDownload(song.id, song.title)}
+                                    handleDownload(
+                                        String(song.id),
+                                        String(song.title),
+                                    )}
                             >
                                 <Download size={24} color="white" />
                             </button>
@@ -256,7 +263,11 @@
                     </div>
                     <div class="actions">
                         <button
-                            on:click={() => handleDownload(song.id, song.title)}
+                            on:click={() =>
+                                handleDownload(
+                                    String(song.id),
+                                    String(song.title),
+                                )}
                             class="btn btn-sm"
                             disabled={downloadingIds.has(song.id)}
                         >
