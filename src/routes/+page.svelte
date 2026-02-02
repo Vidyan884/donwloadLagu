@@ -63,7 +63,7 @@
     let urlInput = "";
     let urlLoading = false;
     let urlResult =
-        /** @type {{ title: string; platform: string; thumbnail: string; downloadUrl: string } | null} */ (
+        /** @type {{ id: string; title: string; platform: string; thumbnail: string; downloadUrl: string } | null} */ (
             null
         );
     let urlError = "";
@@ -94,6 +94,47 @@
     /** @param {KeyboardEvent} e */
     function handleUrlKeydown(e) {
         if (e.key === "Enter") handleUrlDownload();
+    }
+
+    // Download Handler
+    let downloadingIds = new Set();
+
+    async function handleDownload(id, filename) {
+        if (downloadingIds.has(id)) return;
+        downloadingIds.add(id);
+        downloadingIds = downloadingIds; // trigger reactivity
+        errorMsg = "";
+
+        try {
+            const res = await fetch(`/api/download?id=${id}`);
+
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(
+                    data.message || data.error || "Download failed",
+                );
+            }
+
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.style.display = "none";
+            a.href = url;
+            a.download = `${filename}.mp3`;
+            document.body.appendChild(a);
+            a.click();
+
+            setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            }, 100);
+        } catch (e) {
+            console.error(e);
+            errorMsg = `Gagal mendownload: ${e.message}. Coba lagu lain.`;
+        } finally {
+            downloadingIds.delete(id);
+            downloadingIds = downloadingIds; // trigger reactivity
+        }
     }
 </script>
 
@@ -174,10 +215,18 @@
                 <div class="url-info">
                     <span class="platform-badge">{urlResult.platform}</span>
                     <h3>{urlResult.title}</h3>
-                    <a href={urlResult.downloadUrl} class="btn" download>
-                        <Download size={18} />
-                        {$t.downloadMp3}
-                    </a>
+                    <button
+                        class="btn"
+                        on:click={() =>
+                            handleDownload(urlResult.id, urlResult.title)}
+                        disabled={downloadingIds.has(urlResult.id)}
+                    >
+                        {#if downloadingIds.has(urlResult.id)}
+                            {$t.processing}
+                        {:else}
+                            <Download size={18} /> {$t.downloadMp3}
+                        {/if}
+                    </button>
                 </div>
             </div>
         {/if}
@@ -192,13 +241,13 @@
                     <div class="cover">
                         <img src={song.cover} alt={song.title} />
                         <div class="overlay">
-                            <a
-                                href="/api/download?id={song.id}"
+                            <button
                                 class="btn-icon btn-play"
-                                download
+                                on:click={() =>
+                                    handleDownload(song.id, song.title)}
                             >
                                 <Download size={24} color="white" />
-                            </a>
+                            </button>
                         </div>
                     </div>
                     <div class="info">
@@ -206,14 +255,17 @@
                         <p>{song.artist}</p>
                     </div>
                     <div class="actions">
-                        <a
-                            href="/api/download?id={song.id}"
+                        <button
+                            on:click={() => handleDownload(song.id, song.title)}
                             class="btn btn-sm"
-                            download
+                            disabled={downloadingIds.has(song.id)}
                         >
-                            <Download size={18} />
-                            {$t.download}
-                        </a>
+                            {#if downloadingIds.has(song.id)}
+                                {$t.processing}
+                            {:else}
+                                <Download size={18} /> {$t.download}
+                            {/if}
+                        </button>
                     </div>
                 </div>
             {/each}
@@ -407,6 +459,7 @@
     .url-desc {
         color: var(--text-muted);
         margin-bottom: 1.5rem;
+        font-size: 1.1rem;
     }
 
     .url-input-box {

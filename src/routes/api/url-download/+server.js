@@ -18,6 +18,7 @@ export async function GET({ url }) {
         const details = info.videoDetails;
 
         const result = {
+            id: details.videoId,
             title: details.title,
             platform: 'YouTube',
             thumbnail: details.thumbnails[details.thumbnails.length - 1].url,
