@@ -34,9 +34,14 @@ export async function GET({ url }) {
             try {
                 // chmod +x
                 const fs = await import('fs');
-                fs.chmodSync(ytDlpPath, 0o755);
+                if (fs.existsSync(ytDlpPath)) {
+                    fs.chmodSync(ytDlpPath, 0o755);
+                } else {
+                    console.error('Binary not found at:', ytDlpPath);
+                    throw new Error('yt-dlp binary not found on server');
+                }
             } catch (e) {
-                console.warn('Failed to set permissions on yt-dlp binary:', e);
+                console.warn('Failed to set permissions or find binary:', e);
             }
         }
 
