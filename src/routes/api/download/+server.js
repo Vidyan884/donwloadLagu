@@ -44,22 +44,32 @@ export async function GET({ url }) {
 
         const isWin = process.platform === 'win32';
         const binName = isWin ? 'yt-dlp.exe' : 'yt-dlp';
-        const ytDlpPath = path.resolve('bin', binName);
+        let ytDlpPath = path.resolve('bin', binName);
         let useYtDlp = true;
 
-        // Check binary existence on Linux/Unix
+        // Check binary existence on Linux/Unix (Vercel environment)
         if (!isWin) {
             try {
                 const fs = await import('fs');
-                if (fs.existsSync(ytDlpPath)) {
-                    fs.chmodSync(ytDlpPath, 0o755);
-                } else {
-                    console.warn('yt-dlp binary not found, skipping directly to fallback.');
-                    useYtDlp = false;
+                // Vercel has a read-only filesystem, so we must copy the binary to /tmp to make it executable
+                const tmpPath = '/tmp/yt-dlp';
+
+                // Only copy if it doesn't exist or if we want to ensure fresh copy (checking existence is faster)
+                if (!fs.existsSync(tmpPath)) {
+                    console.log(`Copying binary to ${tmpPath}...`);
+                    fs.copyFileSync(ytDlpPath, tmpPath);
                 }
+
+                // Set executable permissions on the /tmp copy
+                fs.chmodSync(tmpPath, 0o755);
+
+                // Update path to use the /tmp version
+                ytDlpPath = tmpPath;
+                console.log(`Using executable binary at: ${ytDlpPath}`);
             } catch (e) {
-                console.warn('Failed to check/chmod binary:', e);
-                useYtDlp = false; // Safe default
+                console.warn('Failed to setup binary in /tmp:', e);
+                // Fallback to ytdl-core if copying fails
+                useYtDlp = false;
             }
         }
 
