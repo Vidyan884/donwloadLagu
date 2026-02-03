@@ -44,7 +44,10 @@ export async function GET({ url }) {
 
         const isWin = process.platform === 'win32';
         const binName = isWin ? 'yt-dlp.exe' : 'yt-dlp';
-        let ytDlpPath = path.resolve('bin', binName);
+        // Vercel path adjustment: process.cwd() is the root, but sometimes files are in nested paths depending on how SvelteKit builds.
+        // We look for 'bin' in process.cwd().
+        let ytDlpPath = path.join(process.cwd(), 'bin', binName);
+        console.log(`[Init] environment: ${process.platform}, cwd: ${process.cwd()}, looking for binary at: ${ytDlpPath}`);
         let useYtDlp = true;
 
         // Check binary existence on Linux/Unix (Vercel environment)
@@ -56,8 +59,12 @@ export async function GET({ url }) {
 
                 // Only copy if it doesn't exist or if we want to ensure fresh copy (checking existence is faster)
                 if (!fs.existsSync(tmpPath)) {
-                    console.log(`Copying binary to ${tmpPath}...`);
-                    fs.copyFileSync(ytDlpPath, tmpPath);
+                    console.log(`Copying binary from ${ytDlpPath} to ${tmpPath}...`);
+                    if (fs.existsSync(ytDlpPath)) {
+                        fs.copyFileSync(ytDlpPath, tmpPath);
+                    } else {
+                        throw new Error(`Binary not found at source: ${ytDlpPath}`);
+                    }
                 }
 
                 // Set executable permissions on the /tmp copy

@@ -1,1 +1,8 @@
-{}
+{
+    "functions": {
+        "src/routes/api/download/+server.js": {
+            "includeFiles": "bin/**",
+            "maxDuration": 30
+        }
+    }
+}
