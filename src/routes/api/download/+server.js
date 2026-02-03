@@ -1,7 +1,13 @@
 import { error } from '@sveltejs/kit';
-import ytdl from '@distube/ytdl-core';
-import { spawn } from 'child_process';
-import path from 'path';
+import youtubedl from 'youtube-dl-exec';
+
+// Cobalt API instances for fallback
+const COBALT_INSTANCES = [
+    'https://api.cobalt.tools',
+    'https://cobalt-api.meowing.de',
+    'https://kityune.imput.net',
+    'https://blossom.imput.net'
+];
 
 /** @type {import('./$types').RequestHandler} */
 export async function GET({ url }) {
@@ -11,155 +17,138 @@ export async function GET({ url }) {
         throw error(400, 'Missing video ID');
     }
 
+    const videoUrl = `https://www.youtube.com/watch?v=${id}`;
+    console.log(`[Download] Processing ID: ${id}`);
+
     try {
-        const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-        console.log(`[Method: Smart] Fetching info for ID: ${id}`);
+        // Try youtube-dl-exec first (primary method)
+        return await downloadWithYoutubeDl(videoUrl, id);
+    } catch (primaryError) {
+        console.error('[Primary] youtube-dl-exec failed:', primaryError);
 
-        if (!ytdl.validateID(id) && !ytdl.validateURL(videoUrl)) {
-            throw new Error('Invalid video ID');
-        }
+        // Fallback to Cobalt API
+        try {
+            return await downloadWithCobalt(videoUrl, id);
+        } catch (cobaltError) {
+            console.error('[Fallback] Cobalt failed:', cobaltError);
 
-        const info = await ytdl.getBasicInfo(videoUrl);
-        const title = info.videoDetails.title.replace(/[^\w\s]/gi, '');
-        const filename = `${title}.mp3`;
-
-        console.log(`Target: ${title}`);
-
-        // Helper to download with ytdl-core as fallback
-        const downloadWithYtdl = () => {
-            console.log('Falling back to ytdl-core...');
-            const stream = ytdl(videoUrl, {
-                quality: 'highestaudio',
-                filter: 'audioonly'
+            // Return error response
+            return new Response(JSON.stringify({
+                message: "Gagal memproses audio. Silakan coba lagi nanti.",
+                error: primaryError instanceof Error ? primaryError.message : String(primaryError)
+            }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
             });
+        }
+    }
+}
 
-            // @ts-ignore
-            return new Response(stream, {
+/**
+ * Download using youtube-dl-exec with anti-bot headers
+ * @param {string} videoUrl 
+ * @param {string} id 
+ */
+async function downloadWithYoutubeDl(videoUrl, id) {
+    console.log('[youtube-dl-exec] Starting download...');
+
+    // Get video info first
+    const info = await youtubedl(videoUrl, {
+        dumpSingleJson: true,
+        noCheckCertificates: true,
+        noWarnings: true,
+        preferFreeFormats: true,
+        addHeader: ['referer:youtube.com', 'user-agent:googlebot']
+    });
+
+    const title = String(info.title).replace(/[^\w\s]/gi, '');
+    const filename = `${title}.mp3`;
+    console.log(`[youtube-dl-exec] Title: ${title}`);
+
+    // Get audio stream URL
+    const audioUrl = await youtubedl(videoUrl, {
+        format: 'bestaudio',
+        getUrl: true,
+        noCheckCertificates: true,
+        addHeader: ['referer:youtube.com', 'user-agent:googlebot']
+    });
+
+    console.log('[youtube-dl-exec] Got audio URL, streaming...');
+
+    // Fetch and stream the audio
+    const audioResponse = await fetch(String(audioUrl), {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.youtube.com/'
+        }
+    });
+
+    if (!audioResponse.ok || !audioResponse.body) {
+        throw new Error(`Failed to fetch audio: ${audioResponse.status}`);
+    }
+
+    return new Response(audioResponse.body, {
+        headers: {
+            'Content-Type': 'audio/mpeg',
+            'Content-Disposition': `attachment; filename="${filename}"`
+        }
+    });
+}
+
+/**
+ * Fallback download using Cobalt API
+ * @param {string} videoUrl 
+ * @param {string} id 
+ */
+async function downloadWithCobalt(videoUrl, id) {
+    console.log('[Cobalt] Trying fallback...');
+
+    for (const instance of COBALT_INSTANCES) {
+        try {
+            console.log(`[Cobalt] Trying ${instance}...`);
+
+            const response = await fetch(instance, {
+                method: 'POST',
                 headers: {
-                    'Content-Type': 'audio/mpeg',
-                    'Content-Disposition': `attachment; filename="${filename}"`
-                }
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Origin': 'https://cobalt.tools'
+                },
+                body: JSON.stringify({
+                    url: videoUrl,
+                    downloadMode: 'audio',
+                    audioFormat: 'mp3'
+                })
             });
-        };
 
-        const isWin = process.platform === 'win32';
-        const binName = isWin ? 'yt-dlp.exe' : 'yt-dlp';
-        // Vercel path adjustment: process.cwd() is the root, but sometimes files are in nested paths depending on how SvelteKit builds.
-        // We look for 'bin' in process.cwd().
-        let ytDlpPath = path.join(process.cwd(), 'bin', binName);
-        console.log(`[Init] environment: ${process.platform}, cwd: ${process.cwd()}, looking for binary at: ${ytDlpPath}`);
-        let useYtDlp = true;
+            if (!response.ok) {
+                console.log(`[Cobalt] ${instance} returned ${response.status}`);
+                continue;
+            }
 
-        // Check binary existence on Linux/Unix (Vercel environment)
-        if (!isWin) {
-            try {
-                const fs = await import('fs');
-                // Vercel has a read-only filesystem, so we must copy the binary to /tmp to make it executable
-                const tmpPath = '/tmp/yt-dlp';
+            const data = await response.json();
 
-                // Only copy if it doesn't exist or if we want to ensure fresh copy (checking existence is faster)
-                if (!fs.existsSync(tmpPath)) {
-                    console.log(`Copying binary from ${ytDlpPath} to ${tmpPath}...`);
-                    if (fs.existsSync(ytDlpPath)) {
-                        fs.copyFileSync(ytDlpPath, tmpPath);
-                    } else {
-                        throw new Error(`Binary not found at source: ${ytDlpPath}`);
-                    }
+            if (data.url) {
+                console.log(`[Cobalt] Got download URL from ${instance}`);
+
+                // Fetch audio from cobalt URL
+                const audioResponse = await fetch(data.url);
+                if (!audioResponse.ok || !audioResponse.body) {
+                    throw new Error('Failed to fetch audio from Cobalt URL');
                 }
 
-                // Set executable permissions on the /tmp copy
-                fs.chmodSync(tmpPath, 0o755);
-
-                // Update path to use the /tmp version
-                ytDlpPath = tmpPath;
-                console.log(`Using executable binary at: ${ytDlpPath}`);
-            } catch (e) {
-                console.warn('Failed to setup binary in /tmp:', e);
-                // Fallback to ytdl-core if copying fails
-                useYtDlp = false;
-            }
-        }
-
-        if (useYtDlp) {
-            try {
-                return await new Promise((resolve, reject) => {
-                    console.log(`Attempting yt-dlp spawn at: ${ytDlpPath}`);
-
-                    const ytDlpProcess = spawn(ytDlpPath, [
-                        '-f', 'bestaudio',
-                        '-o', '-',
-                        videoUrl
-                    ]);
-
-                    // If spawn fails immediately (e.g. ENOENT, EACCES)
-                    ytDlpProcess.on('error', (err) => {
-                        console.error('yt-dlp spawn error:', err);
-                        // Resolve with fallback instead of rejecting to keep the flow
-                        resolve(downloadWithYtdl());
-                    });
-
-                    // Capture stderr for debugging, but don't fail immediately on warnings
-                    ytDlpProcess.stderr.on('data', (data) => {
-                        const msg = data.toString();
-                        // Ignore progress outputs
-                        if (!msg.includes('[download]')) {
-                            console.log(`yt-dlp stderr: ${msg.trim()}`);
-                        }
-                    });
-
-                    // If the process exits with error code, fallback might be needed
-                    // BUT: we are piping stdout. If we wait for exit, we can't stream.
-                    // So we rely on the fact that if it works, we get a stdout stream.
-
-                    // Optimization: We return the Response immediately with the stdout stream.
-                    // If yt-dlp crashes mid-stream, the download breaks, which is "fine" for HTTP.
-                    // The critical part is catching the *start* failure.
-
-                    // However, to be extra safe against immediate exit without data:
-                    let hasData = false;
-                    ytDlpProcess.stdout.once('data', () => {
-                        hasData = true;
-                    });
-
-                    ytDlpProcess.on('close', (code) => {
-                        if (code !== 0 && !hasData) {
-                            console.warn(`yt-dlp exited with code ${code} and no data. Switching to fallback.`);
-                            resolve(downloadWithYtdl());
-                        }
-                    });
-
-                    // Ideally we return the stream immediately
-                    if (ytDlpProcess.stdout) {
-                        // @ts-ignore
-                        resolve(new Response(ytDlpProcess.stdout, {
-                            headers: {
-                                'Content-Type': 'audio/mpeg',
-                                'Content-Disposition': `attachment; filename="${filename}"`
-                            }
-                        }));
-                    } else {
-                        // Should not happen if spawn succeeded
-                        reject(new Error('No stdout from yt-dlp'));
+                return new Response(audioResponse.body, {
+                    headers: {
+                        'Content-Type': 'audio/mpeg',
+                        'Content-Disposition': `attachment; filename="${id}.mp3"`
                     }
                 });
-            } catch (e) {
-                console.error('Global failure in yt-dlp block:', e);
-                return downloadWithYtdl();
             }
-        } else {
-            return downloadWithYtdl();
+        } catch (e) {
+            console.error(`[Cobalt] ${instance} error:`, e);
         }
-
-    } catch (e) {
-        console.error("Critical Download Error:", e);
-        const errorMessage = e instanceof Error ? e.message : String(e);
-        // @ts-ignore
-        return new Response(JSON.stringify({
-            message: "Gagal memproses audio. Silakan coba lagi nanti.",
-            error: errorMessage
-        }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' }
-        });
     }
+
+    throw new Error('All Cobalt instances failed');
 }

@@ -22,6 +22,7 @@
 	"type": "module",
 	"dependencies": {
 		"@distube/ytdl-core": "^4.16.12",
+		"youtube-dl-exec": "^3.0.30",
 		"yt-search": "^2.13.1"
 	}
 }
